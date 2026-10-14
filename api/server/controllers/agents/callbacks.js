@@ -41,6 +41,33 @@ const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Fil
 const { preflightCodeOutputBatch } = require('~/server/services/Files/Code/preflight');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
+/**
+ * Resolve the provider-billed USD cost (e.g. LiteLLM `usage.cost` on the
+ * final streamed chunk) from a model output message, if present.
+ *
+ * The cost lands on `response_metadata.usage` via LangChain's delta
+ * converter, which then gets MERGED (summed) with the agents-emitted final
+ * chunk's `response_metadata: { usage }` by `_mergeDicts` — every numeric
+ * field in the usage object is doubled. Undo the duplication with the
+ * token ratio when tokens are available.
+ * @param {AIMessage | undefined} output
+ * @returns {number | undefined} USD cost, or `undefined` to fall back to
+ *   local price tables.
+ */
+function resolveProviderCost(output) {
+  const raw = output?.response_metadata?.usage;
+  const cost = raw?.cost;
+  if (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0) {
+    return undefined;
+  }
+  const rawTotal = raw.total_tokens;
+  const total = output?.usage_metadata?.total_tokens;
+  if (typeof rawTotal === 'number' && rawTotal > 0 && typeof total === 'number' && total > 0) {
+    return cost * (total / rawTotal);
+  }
+  return cost;
+}
+
 function isHostFileAuthoringArtifact(artifact) {
   return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
 }
@@ -177,6 +204,12 @@ class ModelEndHandler {
 
       this.collectedUsage.push(taggedUsage);
 
+      /** Provider-billed cost (e.g. LiteLLM `usage.cost` on the final streamed
+       *  chunk), de-duplicated from the chunk merge. `undefined` for providers
+       *  that don't report one, in which case `emitTokenUsage` falls back to
+       *  `computeUsageCostUSD` price tables. */
+      const reportedCost = resolveProviderCost(data?.output);
+
       if (this.emitUsage) {
         /** Normalize Anthropic/Bedrock top-level and OpenAI GPT-5.6
          *  `cache_write_tokens` cache fields into details so the emitted/persisted
@@ -207,6 +240,11 @@ class ModelEndHandler {
             /** Per-run sequence so identical payloads from distinct calls
              *  stay distinguishable during resume dedupe */
             seq: this.collectedUsage.length,
+            /** Provider-billed USD cost when the backend reports one (LiteLLM);
+             *  `undefined` otherwise so the local fallback prices the call.
+             *  Kept out of the payload until emitTokenUsage maps it onto `cost`
+             *  only when cost display is enabled. */
+            providerCost: reportedCost,
           });
         } catch (err) {
           /** Best-effort telemetry: a failed emit (closed SSE, Redis publish
@@ -494,22 +532,30 @@ function getDefaultHandlers({
    * of re-deriving from base rates.
    * @param {Record<string, unknown>} data
    */
-  const emitTokenUsage = ({ agentId, ...data }) => {
+  const emitTokenUsage = ({ agentId, providerCost, ...data }) => {
     let payload = data;
-    if (usageCost?.enabled === true && usageCost.pricing) {
-      try {
-        /** Price with the producing agent's config (multi-endpoint graphs) so
-         *  the streamed/persisted cost matches the per-agent balance transaction;
-         *  `agentId` is resolved here, not forwarded to the client or rollup. */
-        const endpointTokenConfig = usageCost.resolveEndpointTokenConfig
-          ? usageCost.resolveEndpointTokenConfig({ agentId })
-          : usageCost.endpointTokenConfig;
-        payload = {
-          ...data,
-          cost: computeUsageCostUSD(data, usageCost.pricing, endpointTokenConfig),
-        };
-      } catch (err) {
-        logger.warn('[getDefaultHandlers] Failed to compute usage cost', err);
+    if (usageCost?.enabled === true) {
+      /** Prefer the provider-billed cost (e.g. LiteLLM `usage.cost` on the
+       *  final streamed chunk) when present — it reflects the model the
+       *  request was actually routed to (incl. Auto router and long-prompt
+       *  tiers). Fall back to `computeUsageCostUSD` from tokenConfig rates. */
+      if (providerCost != null) {
+        payload = { ...data, cost: providerCost };
+      } else if (usageCost.pricing) {
+        try {
+          /** Price with the producing agent's config (multi-endpoint graphs) so
+           *  the streamed/persisted cost matches the per-agent balance transaction;
+           *  `agentId` is resolved here, not forwarded to the client or rollup. */
+          const endpointTokenConfig = usageCost.resolveEndpointTokenConfig
+            ? usageCost.resolveEndpointTokenConfig({ agentId })
+            : usageCost.endpointTokenConfig;
+          payload = {
+            ...data,
+            cost: computeUsageCostUSD(data, usageCost.pricing, endpointTokenConfig),
+          };
+        } catch (err) {
+          logger.warn('[getDefaultHandlers] Failed to compute usage cost', err);
+        }
       }
     }
     /** Collect the same payload the client folds so the response's usage rollup
@@ -1689,6 +1735,7 @@ function buildSummarizationHandlers({ isStreaming, res }) {
 
 module.exports = {
   ModelEndHandler,
+  resolveProviderCost,
   agentLogHandler,
   agentLogHandlerObj,
   getDefaultHandlers,
