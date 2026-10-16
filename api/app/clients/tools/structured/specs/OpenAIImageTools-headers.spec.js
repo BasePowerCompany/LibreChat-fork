@@ -66,28 +66,31 @@ describe('OpenAI image tools - request headers', () => {
     expect(result.artifact.content[0].image_url.url).toBe(`data:image/png;base64,${FAKE_BASE64}`);
   });
 
-  it('sends the provided headers with image edit requests', async () => {
+  const imageFiles = [
+    {
+      file_id: 'file-1',
+      filepath: '/uploads/cat.png',
+      filename: 'cat.png',
+      type: 'image/png',
+      source: 'local',
+    },
+  ];
+
+  const invokeEdit = async (fields) => {
     axios.post.mockResolvedValue({ data: { data: [{ b64_json: FAKE_BASE64 }] } });
     mockGetDownloadStream.mockResolvedValue(Readable.from([Buffer.from('image')]));
-    const imageFiles = [
-      {
-        file_id: 'file-1',
-        filepath: '/uploads/cat.png',
-        filename: 'cat.png',
-        type: 'image/png',
-        source: 'local',
-      },
-    ];
     const [, imageEdit] = createOpenAIImageTools({
-      isAgent: true,
-      headers,
       imageFiles,
       req: { user: { id: 'user-1' } },
+      ...fields,
     });
-
     await imageEdit.invoke(
       makeToolCall('image_edit_oai', { prompt: 'make it orange', image_ids: ['file-1'] }),
     );
+  };
+
+  it('sends the provided headers with image edit requests', async () => {
+    await invokeEdit({ isAgent: true, headers });
 
     expect(axios.post).toHaveBeenCalledWith(
       '/images/edits',
@@ -99,6 +102,15 @@ describe('OpenAI image tools - request headers', () => {
         }),
       }),
     );
+  });
+
+  it('ignores provided headers on both paths when override is set', async () => {
+    const [imageGen] = createOpenAIImageTools({ override: true, headers });
+    await imageGen.invoke(makeToolCall('image_gen_oai', { prompt: 'a cat' }));
+    await invokeEdit({ override: true, headers });
+
+    expect(OpenAI.mock.calls[0][0]).not.toHaveProperty('defaultHeaders');
+    expect(axios.post.mock.calls[0][2].headers).not.toHaveProperty('X-LibreChat-User-Email');
   });
 
   it('does not set default headers when none are provided', async () => {

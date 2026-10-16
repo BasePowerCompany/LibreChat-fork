@@ -71,6 +71,7 @@ function createOpenAIImageTools(fields = {}) {
   const { req } = fields;
   const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
   const appFileStrategy = fields.fileStrategy;
+  const requestHeaders = override ? undefined : fields.headers;
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';
@@ -91,8 +92,8 @@ function createOpenAIImageTools(fields = {}) {
     closureConfig.baseURL = baseURL;
   }
 
-  if (!override && fields.headers) {
-    closureConfig.defaultHeaders = fields.headers;
+  if (requestHeaders) {
+    closureConfig.defaultHeaders = requestHeaders;
   }
 
   // Note: Azure may not yet support the latest image generation models
@@ -329,7 +330,7 @@ Error Message: ${error.message}`);
 
       /** @type {import('axios').RawAxiosHeaders} */
       let headers = {
-        ...fields.headers,
+        ...requestHeaders,
         ...formData.getHeaders(),
       };
 

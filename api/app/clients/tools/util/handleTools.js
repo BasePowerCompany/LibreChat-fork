@@ -152,6 +152,8 @@ const getAuthFields = (toolKey) => {
  * @param {Pick<Agent, 'provider' | 'endpoint'>} [params.agent]
  * @returns {Record<string, string> | undefined}
  */
+const normalizeBaseURL = (baseURL) => extractEnvVariable(baseURL).replace(/\/+$/, '');
+
 const getImageGenHeaders = ({ req, agent }) => {
   const imageBaseURL = process.env.IMAGE_GEN_OAI_BASEURL;
   const endpoint = agent?.endpoint ?? agent?.provider;
@@ -162,7 +164,7 @@ const getImageGenHeaders = ({ req, agent }) => {
   if (!endpointConfig?.headers || !endpointConfig.baseURL) {
     return undefined;
   }
-  if (extractEnvVariable(endpointConfig.baseURL) !== extractEnvVariable(imageBaseURL)) {
+  if (normalizeBaseURL(endpointConfig.baseURL) !== normalizeBaseURL(imageBaseURL)) {
     return undefined;
   }
   return resolveHeaders({ headers: endpointConfig.headers, user: req.user, body: req.body });

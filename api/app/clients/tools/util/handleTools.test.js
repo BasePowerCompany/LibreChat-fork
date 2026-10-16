@@ -495,6 +495,15 @@ describe('getImageGenHeaders', () => {
     });
   });
 
+  it('ignores trailing slashes when matching the image base URL', () => {
+    process.env.IMAGE_GEN_OAI_BASEURL = `${baseURL}/`;
+
+    expect(getImageGenHeaders({ req, agent: { endpoint: 'Base LLM Proxy' } })).toEqual({
+      'X-LibreChat-User-Email': 'user@example.com',
+      'x-litellm-session-id': 'convo-1',
+    });
+  });
+
   it('returns undefined when the invoking endpoint has a different base URL', () => {
     process.env.IMAGE_GEN_OAI_BASEURL = baseURL;
 
