@@ -78,6 +78,7 @@ export type TModelSpec = {
    * agent capability to be enabled by the admin.
    */
   describeIntent?: boolean | string[];
+  imageGen?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
@@ -201,6 +202,7 @@ export const tModelSpecSchema = z.object({
   askUserQuestion: z.boolean().optional(),
   runInBackground: z.union([z.boolean(), z.array(z.string())]).optional(),
   describeIntent: z.union([z.boolean(), z.array(z.string())]).optional(),
+  imageGen: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),

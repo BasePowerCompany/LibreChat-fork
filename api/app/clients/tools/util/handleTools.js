@@ -5,6 +5,7 @@ const {
   toolkitParent,
   toolRolePermissions,
   checkToolRolePermission,
+  resolveHeaders,
   createSafeUser,
   loadMCPTools,
   createAuthIdentityContext,
@@ -28,6 +29,7 @@ const {
   codeExecutionAuthHeaders,
   getCodeFileLocation,
   resolveCodeExecutionContext,
+  getCustomEndpointConfig,
 } = require('@librechat/api');
 const {
   AuthType,
@@ -37,6 +39,7 @@ const {
   EToolResources,
   PermissionTypes,
   AgentCapabilities,
+  extractEnvVariable,
 } = require('librechat-data-provider');
 const {
   availableTools,
@@ -176,6 +179,32 @@ const getAuthFields = (toolKey) => {
   return manifestToolMap[toolKey]?.authConfig.map((auth) => auth.authField) ?? [];
 };
 
+const normalizeBaseURL = (baseURL) => extractEnvVariable(baseURL).replace(/\/+$/, '');
+
+/**
+ * Headers of the custom endpoint that invoked the image tool, resolved for the
+ * current request, when `IMAGE_GEN_OAI_BASEURL` targets that same endpoint.
+ * @param {object} params
+ * @param {ServerRequest} [params.req]
+ * @param {Pick<Agent, 'provider' | 'endpoint'>} [params.agent]
+ * @returns {Record<string, string> | undefined}
+ */
+const getImageGenHeaders = ({ req, agent }) => {
+  const imageBaseURL = process.env.IMAGE_GEN_OAI_BASEURL;
+  const endpoint = agent?.endpoint ?? agent?.provider;
+  if (!imageBaseURL || !endpoint || !req?.config) {
+    return undefined;
+  }
+  const endpointConfig = getCustomEndpointConfig({ endpoint, appConfig: req.config });
+  if (!endpointConfig?.headers || !endpointConfig.baseURL) {
+    return undefined;
+  }
+  if (normalizeBaseURL(endpointConfig.baseURL) !== normalizeBaseURL(imageBaseURL)) {
+    return undefined;
+  }
+  return resolveHeaders({ headers: endpointConfig.headers, user: req.user, body: req.body });
+};
+
 /**
  *
  * @param {object} params
@@ -239,6 +268,7 @@ const loadTools = async ({
         ...authValues,
         isAgent: !!agent,
         req: options.req,
+        headers: getImageGenHeaders({ req: options.req, agent }),
         imageOutputType,
         fileStrategy,
         imageFiles,
@@ -683,6 +713,7 @@ const loadTools = async ({
 };
 
 module.exports = {
+  getImageGenHeaders,
   loadToolWithAuth,
   validateTools,
   loadTools,
