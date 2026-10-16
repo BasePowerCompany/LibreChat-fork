@@ -144,6 +144,8 @@ const getAuthFields = (toolKey) => {
   return manifestToolMap[toolKey]?.authConfig.map((auth) => auth.authField) ?? [];
 };
 
+const normalizeBaseURL = (baseURL) => extractEnvVariable(baseURL).replace(/\/+$/, '');
+
 /**
  * Headers of the custom endpoint that invoked the image tool, resolved for the
  * current request, when `IMAGE_GEN_OAI_BASEURL` targets that same endpoint.
@@ -152,8 +154,6 @@ const getAuthFields = (toolKey) => {
  * @param {Pick<Agent, 'provider' | 'endpoint'>} [params.agent]
  * @returns {Record<string, string> | undefined}
  */
-const normalizeBaseURL = (baseURL) => extractEnvVariable(baseURL).replace(/\/+$/, '');
-
 const getImageGenHeaders = ({ req, agent }) => {
   const imageBaseURL = process.env.IMAGE_GEN_OAI_BASEURL;
   const endpoint = agent?.endpoint ?? agent?.provider;
