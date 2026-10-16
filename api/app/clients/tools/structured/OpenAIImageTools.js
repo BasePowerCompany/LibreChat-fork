@@ -54,6 +54,7 @@ function createAbortHandler() {
  * @param {ServerRequest} fields.req - Whether the tool is being used in an agent context
  * @param {boolean} fields.isAgent - Whether the tool is being used in an agent context
  * @param {string} fields.IMAGE_GEN_OAI_API_KEY - The OpenAI API key
+ * @param {Record<string, string>} [fields.headers] - Extra headers sent with each image request
  * @param {boolean} [fields.override] - Whether to override the API key check, necessary for app initialization
  * @param {MongoFile[]} [fields.imageFiles] - The images to be used for editing
  * @param {string} [fields.imageOutputType] - The image output type configuration
@@ -70,6 +71,7 @@ function createOpenAIImageTools(fields = {}) {
   const { req } = fields;
   const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
   const appFileStrategy = fields.fileStrategy;
+  const requestHeaders = override ? undefined : fields.headers;
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';
@@ -88,6 +90,10 @@ function createOpenAIImageTools(fields = {}) {
   if (!override && process.env.IMAGE_GEN_OAI_BASEURL) {
     baseURL = extractBaseURL(process.env.IMAGE_GEN_OAI_BASEURL);
     closureConfig.baseURL = baseURL;
+  }
+
+  if (requestHeaders) {
+    closureConfig.defaultHeaders = requestHeaders;
   }
 
   // Note: Azure may not yet support the latest image generation models
@@ -324,6 +330,7 @@ Error Message: ${error.message}`);
 
       /** @type {import('axios').RawAxiosHeaders} */
       let headers = {
+        ...requestHeaders,
         ...formData.getHeaders(),
       };
 

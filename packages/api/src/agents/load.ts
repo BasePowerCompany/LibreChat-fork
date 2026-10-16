@@ -15,6 +15,7 @@ import type {
 import type { AppConfig } from '@librechat/data-schemas';
 import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
+import { oaiToolkit } from '~/tools/toolkits/oai';
 
 const { mcp_all, mcp_delimiter } = Constants;
 type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
@@ -72,6 +73,9 @@ export async function loadEphemeralAgent(
   }
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
+  }
+  if (modelSpec?.imageGen === true) {
+    tools.push(oaiToolkit.image_gen_oai.name);
   }
 
   const addedServers = new Set<string>();

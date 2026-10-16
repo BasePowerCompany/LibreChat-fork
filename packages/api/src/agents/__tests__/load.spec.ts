@@ -339,6 +339,49 @@ describe('loadAgent', () => {
     expect(result?.subagents).toBeUndefined();
   });
 
+  test('should add the OpenAI image tool for ephemeral model spec with imageGen true', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+    const modelSpecs = {
+      list: [
+        {
+          name: 'image-on',
+          label: 'Image On',
+          preset: { endpoint: 'openai', model: 'gpt-4' },
+          webSearch: true,
+          imageGen: true,
+        },
+        {
+          name: 'image-off',
+          label: 'Image Off',
+          preset: { endpoint: 'openai', model: 'gpt-4' },
+        },
+      ],
+    };
+    const load = (spec: string) =>
+      loadAgent(
+        {
+          req: {
+            user: { id: 'user123' },
+            body: {},
+            config: {
+              config: {},
+              fileStrategy: FileSources.local,
+              imageOutputType: 'png',
+              modelSpecs,
+            } as unknown as AppConfig,
+          },
+          spec,
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+    expect((await load('image-on'))?.tools).toEqual(['web_search', 'image_gen_oai']);
+    expect((await load('image-off'))?.tools).toEqual([]);
+  });
+
   test('should initialize an empty allowlist for ephemeral model spec skill names', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 
@@ -516,6 +559,39 @@ describe('loadAgent', () => {
 
     expect(result?.skills_enabled).toBe(true);
     expect(result?.skills).toBeUndefined();
+  });
+
+  test('should add the OpenAI image tool for added ephemeral model spec with imageGen true', async () => {
+    const result = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            modelSpecs: {
+              list: [
+                {
+                  name: 'added-image-on',
+                  label: 'Added Image On',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  imageGen: true,
+                },
+              ],
+            },
+          },
+        },
+        conversation: {
+          endpoint: 'openai',
+          model: 'gpt-4',
+          spec: 'added-image-on',
+        } as unknown as TConversation,
+      },
+      deps,
+    );
+
+    expect(result?.tools).toEqual(['image_gen_oai']);
   });
 
   test('should initialize an empty allowlist for added ephemeral model spec skill names', async () => {
