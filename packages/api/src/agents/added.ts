@@ -11,6 +11,7 @@ import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
+import { oaiToolkit } from '~/tools/toolkits/oai';
 
 const { mcp_all, mcp_delimiter } = Constants;
 
@@ -178,6 +179,9 @@ export async function loadAddedAgent(
   }
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
+  }
+  if (modelSpec?.imageGen === true) {
+    tools.push(oaiToolkit.image_gen_oai.name);
   }
 
   const addedServers = new Set<string>();

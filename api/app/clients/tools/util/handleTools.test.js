@@ -55,7 +55,7 @@ const { Constants } = require('librechat-data-provider');
 
 const { User } = require('~/db/models');
 const PluginService = require('~/server/services/PluginService');
-const { validateTools, loadTools, loadToolWithAuth } = require('./handleTools');
+const { validateTools, loadTools, loadToolWithAuth, getImageGenHeaders } = require('./handleTools');
 const { StructuredSD, availableTools, DALLE3 } = require('../');
 
 describe('Tool Handlers', () => {
@@ -450,5 +450,60 @@ describe('Tool Handlers', () => {
         }),
       );
     });
+  });
+});
+
+describe('getImageGenHeaders', () => {
+  const baseURL = 'http://litellm:4000/v1';
+  const savedBaseURL = process.env.IMAGE_GEN_OAI_BASEURL;
+  const req = {
+    user: { id: 'user-1', email: 'user@example.com' },
+    body: { conversationId: 'convo-1' },
+    config: {
+      endpoints: {
+        custom: [
+          {
+            name: 'Base LLM Proxy',
+            baseURL,
+            headers: {
+              'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+              'x-litellm-session-id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+            },
+          },
+          { name: 'Other', baseURL: 'https://other.example.com/v1', headers: { 'X-Other': '1' } },
+        ],
+      },
+    },
+  };
+
+  afterEach(() => {
+    if (savedBaseURL === undefined) {
+      delete process.env.IMAGE_GEN_OAI_BASEURL;
+    } else {
+      process.env.IMAGE_GEN_OAI_BASEURL = savedBaseURL;
+    }
+  });
+
+  it('resolves the invoking endpoint headers when it shares the image base URL', () => {
+    process.env.IMAGE_GEN_OAI_BASEURL = baseURL;
+
+    expect(
+      getImageGenHeaders({ req, agent: { endpoint: 'Base LLM Proxy', provider: 'openAI' } }),
+    ).toEqual({
+      'X-LibreChat-User-Email': 'user@example.com',
+      'x-litellm-session-id': 'convo-1',
+    });
+  });
+
+  it('returns undefined when the invoking endpoint has a different base URL', () => {
+    process.env.IMAGE_GEN_OAI_BASEURL = baseURL;
+
+    expect(getImageGenHeaders({ req, agent: { endpoint: 'Other' } })).toBeUndefined();
+  });
+
+  it('returns undefined when IMAGE_GEN_OAI_BASEURL is not set', () => {
+    delete process.env.IMAGE_GEN_OAI_BASEURL;
+
+    expect(getImageGenHeaders({ req, agent: { endpoint: 'Base LLM Proxy' } })).toBeUndefined();
   });
 });
