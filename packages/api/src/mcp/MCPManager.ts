@@ -513,21 +513,38 @@ Please follow these instructions when using tools from the respective MCP server
 
       connection.setRequestHeaders(resolvedHeaders);
 
-      const result = await connection.client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: toolName,
-            arguments: toolArguments,
+      const activeConnection = connection;
+      const requestToolCall = () =>
+        activeConnection.client.request(
+          {
+            method: 'tools/call',
+            params: {
+              name: toolName,
+              arguments: toolArguments,
+            },
           },
-        },
-        CallToolResultSchema,
-        {
-          timeout: connection.timeout,
-          resetTimeoutOnProgress: true,
-          ...options,
-        },
-      );
+          CallToolResultSchema,
+          {
+            timeout: activeConnection.timeout,
+            resetTimeoutOnProgress: true,
+            ...options,
+          },
+        );
+
+      let result: Awaited<ReturnType<typeof requestToolCall>>;
+      try {
+        result = await requestToolCall();
+      } catch (error) {
+        if (
+          !userId ||
+          !activeConnection.isOAuthError(error) ||
+          !(await activeConnection.recoverFromOAuthError(error))
+        ) {
+          throw error;
+        }
+        logger.info(`${logPrefix}[${toolName}] Retrying tool call with refreshed OAuth token`);
+        result = await requestToolCall();
+      }
       if (userId) {
         this.updateUserLastActivity(userId);
       }
