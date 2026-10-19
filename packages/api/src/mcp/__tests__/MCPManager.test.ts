@@ -2787,6 +2787,94 @@ describe('MCPManager', () => {
     });
   });
 
+  describe('callTool - OAuth recovery on a cached connection', () => {
+    const mockUser: Partial<IUser> = { id: 'user-123', provider: 'openid' };
+    const mockFlowManager = { getState: jest.fn(), setState: jest.fn(), clearState: jest.fn() };
+    const serverConfig: t.StreamableHTTPOptions = {
+      type: 'streamable-http',
+      url: 'https://bigquery.googleapis.com/mcp',
+      requiresOAuth: true,
+    };
+    const rejectedToken = Object.assign(new Error('Error POSTing to endpoint: {"id":7}'), {
+      code: 401,
+    });
+    const toolResult = { content: [{ type: 'text', text: 'rows' }], isError: false };
+
+    function makeConnection(overrides: Record<string, unknown> = {}) {
+      return {
+        on: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+        removeAllListeners: jest.fn(),
+        refreshToolList: jest.fn().mockResolvedValue({ tools: [] }),
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        isOAuthError: jest.fn((error: unknown) => (error as { code?: number }).code === 401),
+        recoverFromOAuthError: jest.fn().mockResolvedValue(true),
+        timeout: 30000,
+        client: {
+          request: jest.fn().mockRejectedValueOnce(rejectedToken).mockResolvedValue(toolResult),
+        },
+        ...overrides,
+      } as unknown as MCPConnection;
+    }
+
+    async function callTool(manager: MCPManager) {
+      return manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'get_table_info',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+    }
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockAppConnections({ get: jest.fn().mockResolvedValue(undefined) });
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+    });
+
+    it('refreshes the token and retries once when the server rejects the access token', async () => {
+      const connection = makeConnection();
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      const result = await callTool(manager);
+
+      expect(connection.recoverFromOAuthError).toHaveBeenCalledWith(rejectedToken);
+      expect(connection.client.request).toHaveBeenCalledTimes(2);
+      expect(result).toEqual(expect.arrayContaining([expect.anything()]));
+    });
+
+    it('rethrows the original error when the token could not be refreshed', async () => {
+      const connection = makeConnection({
+        recoverFromOAuthError: jest.fn().mockResolvedValue(false),
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(callTool(manager)).rejects.toBe(rejectedToken);
+      expect(connection.client.request).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not attempt recovery for non-auth tool failures', async () => {
+      const failure = new Error('MCP error -32603: boom');
+      const connection = makeConnection({
+        client: { request: jest.fn().mockRejectedValue(failure) },
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(callTool(manager)).rejects.toBe(failure);
+      expect(connection.recoverFromOAuthError).not.toHaveBeenCalled();
+    });
+  });
+
   describe('callTool - OBO Integration', () => {
     const mockUser: Partial<IUser> = {
       id: 'user-123',

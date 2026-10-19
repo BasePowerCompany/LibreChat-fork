@@ -1607,6 +1607,22 @@ Please follow these instructions when using tools from the respective MCP server
             await applyOboAuthorization(true);
             connection.setRequestHeaders(resolvedHeaders);
             result = await requestTool();
+          } else if (
+            userId &&
+            connection.isOAuthError?.(error) === true &&
+            (await connection.recoverFromOAuthError?.(error)) === true
+          ) {
+            /**
+             * A cached connection's access token can be rejected mid-session
+             * (Google tokens expire after 1h). `recoverFromOAuthError` emits
+             * `oauthRequired` so the factory handler silently refreshes the token
+             * and rebuilds the transport; retry the call once instead of
+             * surfacing 'OAuth authentication required'.
+             */
+            logger.info(
+              `${logPrefix}[${toolName}] Retrying tool call with refreshed OAuth token`,
+            );
+            result = await requestTool();
           } else {
             const requestOAuthHandler = attachSharedOAuthHandler;
             if (!requestOAuthHandler || !userId) {

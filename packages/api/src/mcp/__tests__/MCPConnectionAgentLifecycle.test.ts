@@ -715,6 +715,137 @@ describe('MCPConnection SSE stream disconnect handling', () => {
   });
 });
 
+describe('MCPConnection transport errors that must not rebuild the transport', () => {
+  function makeTransportStub() {
+    return {
+      onerror: undefined as ((e: Error) => void) | undefined,
+      onclose: undefined as (() => void) | undefined,
+      onmessage: undefined as ((m: unknown) => void) | undefined,
+      start: jest.fn(),
+      close: jest.fn(),
+      send: jest.fn(),
+    };
+  }
+
+  function makeConn() {
+    return new MCPConnection({
+      serverName: 'test-no-rebuild',
+      serverConfig: { url: 'http://127.0.0.1:1/mcp', type: 'streamable-http' },
+      useSSRFProtection: false,
+    });
+  }
+
+  function fireError(conn: MCPConnection, error: Error) {
+    const transport = makeTransportStub();
+    (
+      conn as unknown as { setupTransportErrorHandlers: (t: unknown) => void }
+    ).setupTransportErrorHandlers(transport);
+    transport.onerror?.(error);
+  }
+
+  beforeEach(() => {
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+  });
+
+  it('keeps the connection when an in-flight request is aborted ("fetch failed")', () => {
+    const conn = makeConn();
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireError(conn, new TypeError('fetch failed'));
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('request aborted, keeping connection'),
+      expect.anything(),
+    );
+    expect(mockLogger.error).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('does not reconnect with the same token after an OAuth error', () => {
+    const conn = makeConn();
+    const emitSpy = jest.spyOn(conn, 'emit');
+    const error = Object.assign(new Error('Error POSTing to endpoint: {"id":1}'), { code: 401 });
+
+    fireError(conn, error);
+
+    expect(emitSpy).toHaveBeenCalledWith('oauthError', error);
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('still reconnects on other transport errors', () => {
+    const conn = makeConn();
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireError(conn, Object.assign(new Error('Bad Gateway'), { code: 502 }));
+
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+});
+
+describe('MCPConnection.recoverFromOAuthError', () => {
+  function makeConn() {
+    return new MCPConnection({
+      serverName: 'test-oauth-recovery',
+      serverConfig: { url: 'http://127.0.0.1:1/mcp', type: 'streamable-http' },
+      useSSRFProtection: false,
+    });
+  }
+
+  const rejectedToken = Object.assign(new Error('Error POSTing to endpoint: {"id":1}'), {
+    code: 401,
+  });
+
+  it('returns false when nothing listens for oauthRequired', async () => {
+    const conn = makeConn();
+    const connectSpy = jest.spyOn(conn, 'connect').mockResolvedValue(undefined);
+
+    await expect(conn.recoverFromOAuthError(rejectedToken)).resolves.toBe(false);
+    expect(connectSpy).not.toHaveBeenCalled();
+  });
+
+  it('reconnects and returns true once the handler refreshes the token', async () => {
+    const conn = makeConn();
+    const connectSpy = jest.spyOn(conn, 'connect').mockResolvedValue(undefined);
+    const refreshed = { access_token: 'fresh', token_type: 'Bearer', obtained_at: Date.now() };
+    const handler = jest.fn((event: { error: unknown }) => {
+      expect(event.error).toBe(rejectedToken);
+      conn.setOAuthTokens(refreshed);
+      conn.emit('oauthHandled');
+    });
+    conn.on('oauthRequired', handler);
+
+    await expect(conn.recoverFromOAuthError(rejectedToken)).resolves.toBe(true);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+    expect((conn as unknown as { oauthTokens: unknown }).oauthTokens).toBe(refreshed);
+    expect((conn as unknown as { oauthRequired: boolean }).oauthRequired).toBe(false);
+  });
+
+  it('returns false without reconnecting when the handler falls back to interactive OAuth', async () => {
+    const conn = makeConn();
+    const connectSpy = jest.spyOn(conn, 'connect').mockResolvedValue(undefined);
+    conn.on('oauthRequired', () => {
+      conn.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
+    });
+
+    await expect(conn.recoverFromOAuthError(rejectedToken)).resolves.toBe(false);
+
+    expect(connectSpy).not.toHaveBeenCalled();
+    expect((conn as unknown as { oauthRequired: boolean }).oauthRequired).toBe(false);
+  });
+
+  it('returns false when reconnecting with the refreshed token fails', async () => {
+    const conn = makeConn();
+    jest.spyOn(conn, 'connect').mockRejectedValue(new Error('still rejected'));
+    conn.on('oauthRequired', () => conn.emit('oauthHandled'));
+
+    await expect(conn.recoverFromOAuthError(rejectedToken)).resolves.toBe(false);
+    expect((conn as unknown as { oauthRequired: boolean }).oauthRequired).toBe(false);
+  });
+});
+
 describe('MCPConnection SSE GET stream recovery – integration', () => {
   let server: TestServer;
   let conn: MCPConnection | null;

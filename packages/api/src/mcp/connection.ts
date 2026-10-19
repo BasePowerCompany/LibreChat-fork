@@ -129,6 +129,8 @@ function isStreamableHTTPOptions(options: t.MCPOptions): options is t.Streamable
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
+/** Upper bound for a silent token refresh (5s cap) plus hand-off to interactive OAuth. */
+const OAUTH_RECOVERY_TIMEOUT = 30000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
 const DEFAULT_INIT_TIMEOUT = 30000;
@@ -2332,11 +2334,17 @@ export class MCPConnection extends EventEmitter {
         }
       }
 
-      // Check if it's an OAuth authentication error
+      /**
+       * Rebuilding the transport with the same rejected token cannot fix an auth
+       * failure; `recoverFromOAuthError` (driven from the tool-call path) refreshes
+       * the token and reconnects, so don't start a competing reconnection here.
+       * Direct-bearer servers report transport-level auth errors instead.
+       */
       if (
-        this.directBearerRecoveryEnabled
+        this.isOAuthError(error) ||
+        (this.directBearerRecoveryEnabled
           ? isMCPTransportAuthenticationError(error)
-          : isOAuthAuthenticationError(error)
+          : isOAuthAuthenticationError(error))
       ) {
         logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
         this.lastConnectionCheckError = error;
@@ -2363,6 +2371,20 @@ export class MCPConnection extends EventEmitter {
 
       if (isProxyHint) {
         errorContext.hint = 'Check Nginx/proxy configuration for SSE endpoints';
+      }
+
+      /**
+       * undici reports an aborted in-flight request (a tool call past its timeout,
+       * or the optional GET SSE stream the server never answers) as "fetch failed".
+       * The session is still usable, and reconnecting would reopen the same GET
+       * stream and fail the same way on every cycle.
+       */
+      if (rawMessage === 'fetch failed') {
+        logger.warn(
+          `${this.getLogPrefix()} Transport error (request aborted, keeping connection): ${errorMessage}`,
+          errorContext,
+        );
+        return;
       }
 
       const errorLabel = isTransient
@@ -2895,6 +2917,77 @@ export class MCPConnection extends EventEmitter {
   }
 
   /**
+   * Recovers a live connection whose access token the server just rejected
+   * (typically expired mid-session). Emits `oauthRequired` so the factory
+   * handler can silently refresh the token, or fall back to interactive OAuth,
+   * then rebuilds the transport with the new token. Resolves `true` when the
+   * caller should retry the failed request.
+   */
+  public async recoverFromOAuthError(error: unknown): Promise<boolean> {
+    if (this.oauthRequired || this.listenerCount('oauthRequired') === 0) {
+      return false;
+    }
+
+    this.oauthRequired = true;
+    try {
+      const refreshed = await new Promise<boolean>((resolve) => {
+        let timeoutId: NodeJS.Timeout | null = null;
+        const cleanup = () => {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          this.off('oauthHandled', onHandled);
+          this.off('oauthFailed', onFailed);
+        };
+        const onHandled = () => {
+          cleanup();
+          resolve(true);
+        };
+        const onFailed = (failure: Error) => {
+          cleanup();
+          logger.info(
+            `${this.getLogPrefix()} OAuth recovery did not refresh the token: ${failure.message}`,
+          );
+          resolve(false);
+        };
+        timeoutId = setTimeout(() => {
+          cleanup();
+          logger.warn(
+            `${this.getLogPrefix()} OAuth recovery timed out after ${OAUTH_RECOVERY_TIMEOUT}ms`,
+          );
+          resolve(false);
+        }, OAUTH_RECOVERY_TIMEOUT);
+
+        this.once('oauthHandled', onHandled);
+        this.once('oauthFailed', onFailed);
+        this.emit('oauthRequired', {
+          serverName: this.serverName,
+          error,
+          serverUrl: this.url,
+          userId: this.userId,
+        });
+      });
+
+      if (!refreshed) {
+        return false;
+      }
+
+      this.oauthRecovery = true;
+      await this.connect();
+      logger.info(`${this.getLogPrefix()} Reconnected with refreshed OAuth token`);
+      return true;
+    } catch (reconnectError) {
+      logger.error(
+        `${this.getLogPrefix()} Reconnect after OAuth token refresh failed:`,
+        reconnectError,
+      );
+      return false;
+    } finally {
+      this.oauthRequired = false;
+    }
+  }
+
+  /**
    * Check if this connection is stale compared to config update time.
    * A connection is stale if it was created before the config was updated.
    *
@@ -2903,6 +2996,47 @@ export class MCPConnection extends EventEmitter {
    */
   public isStale(configUpdatedAt: number): boolean {
     return this.createdAt < configUpdatedAt;
+  }
+
+  public isOAuthError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    // Check for error code
+    if ('code' in error) {
+      const code = (error as { code?: number }).code;
+      if (code === 401 || code === 403) {
+        return true;
+      }
+    }
+
+    // Check message for various auth error indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      // Check for 401 status
+      if (message.includes('401') || message.includes('non-200 status code (401)')) {
+        return true;
+      }
+      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
+      if (message.includes('invalid_token')) {
+        return true;
+      }
+      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
+      if (message.includes('invalid_grant')) {
+        return true;
+      }
+      // Check for authentication required
+      if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
+      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
+      if (message.includes('no authorization')) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
