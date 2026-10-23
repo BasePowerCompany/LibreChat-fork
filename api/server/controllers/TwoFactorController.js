@@ -1,5 +1,5 @@
 const { encryptV3, logger } = require('@librechat/data-schemas');
-const { DEFAULT_APP_TITLE } = require('librechat-data-provider');
+const { resolveAppBranding } = require('librechat-data-provider');
 const {
   verifyOTPOrBackupCode,
   generateBackupCodes,
@@ -10,7 +10,7 @@ const {
 } = require('~/server/services/twoFactorService');
 const { getUserById, updateUser } = require('~/models');
 
-const safeAppTitle = (process.env.APP_TITLE || DEFAULT_APP_TITLE).replace(/\s+/g, '');
+const safeAppTitle = resolveAppBranding(process.env).appTitle.replace(/\s+/g, '');
 
 /**
  * Enable 2FA for the user by generating a new TOTP secret and backup codes.

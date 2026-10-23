@@ -12,6 +12,7 @@ export interface AppBranding {
 export function resolveAppBranding(env: {
   APP_TITLE?: string;
   APP_DESCRIPTION?: string;
+  [key: string]: string | undefined;
 }): AppBranding {
   return {
     appTitle: env.APP_TITLE?.trim() || DEFAULT_APP_TITLE,
