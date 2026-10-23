@@ -2,9 +2,15 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import { constants } from 'zlib';
-import { defineConfig } from 'vite';
+import {
+  APP_TITLE_PLACEHOLDER,
+  fillAppBranding,
+  resolveAppBranding,
+} from 'librechat-data-provider';
+import { defineConfig, loadEnv } from 'vite';
 import { createRequire } from 'module';
 import { VitePWA } from 'vite-plugin-pwa';
+import type { VitePluginPWAAPI } from 'vite-plugin-pwa';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { compression, defineAlgorithm } from 'vite-plugin-compression2';
 import type { Plugin } from 'vite';
@@ -47,7 +53,7 @@ const QUERY_DEVTOOLS_CHUNK_MODULES = [
   'node_modules/is-what',
 ];
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   base: '',
   server: {
     allowedHosts:
@@ -70,6 +76,13 @@ export default defineConfig(({ command }) => ({
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_', 'REACT_APP_THEME_'],
   plugins: [
+    {
+      name: 'app-branding',
+      apply: 'serve',
+      transformIndexHtml(html) {
+        return fillAppBranding(html, resolveAppBranding(loadEnv(mode, '../', '')));
+      },
+    },
     react(),
     {
       name: 'node-polyfills-shims-resolver',
@@ -90,102 +103,126 @@ export default defineConfig(({ command }) => ({
       },
     },
     copyPublicAssets(),
-    VitePWA({
-      injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
-      registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
-      devOptions: {
-        enabled: false, // disable service worker registration in development mode
-      },
-      useCredentials: true,
-      includeManifestIcons: false,
-      workbox: {
-        globPatterns: [
-          '**/*.{js,css,html}',
-          'assets/favicon*.png',
-          'assets/icon-*.png',
-          'assets/apple-touch-icon*.png',
-          /** `manifest.webmanifest` is not listed: vite-plugin-pwa always appends it as an
-           * additional manifest entry, so globbing it too duplicates the precache entry. */
-          'assets/maskable-icon.png',
-        ],
-        globIgnores: [
-          'images/**/*',
-          '**/*.map',
-          'index.html',
-          'sw-heal.js',
-          'assets/rum.*.js',
-          'assets/locale-*.js',
-          'assets/query-devtools*.js',
-        ],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        /**
-         * vite-plugin-pwa defaults this to `/^assets\//`, which is only true for the
-         * hashed bundle output: the icons live in `assets/` under stable filenames, so the
-         * default marks them immutable (`revision: null`) and an installed PWA would keep
-         * a rebranded icon forever. Match Vite's `[name].[hash].[ext]` shape instead so
-         * hashed chunks stay revision-free while the icons get content revisions.
-         */
-        dontCacheBustURLsMatching: /\.[\w-]{8}\.(?:js|css)$/,
-        /** LibreChat mutates index.html per request for subpath and language support. */
-        navigateFallback: null,
-        /** Reloads window clients that cannot answer a ping after activation —
-         * pages stuck on a previous build's purged precache (stale index.html)
-         * have no working code of their own to recover with. */
-        importScripts: ['sw-heal.js'],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => /\/assets\/locale-[^/]+\.js$/.test(url.pathname),
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'locale-chunks',
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-              expiration: {
-                maxEntries: 80,
-                maxAgeSeconds: 30 * 24 * 60 * 60,
+    ...(() => {
+      const pwaPlugins = VitePWA({
+        injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
+        registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
+        devOptions: {
+          enabled: false, // disable service worker registration in development mode
+        },
+        useCredentials: true,
+        includeManifestIcons: false,
+        workbox: {
+          globPatterns: [
+            '**/*.{js,css,html}',
+            'assets/favicon*.png',
+            'assets/icon-*.png',
+            'assets/apple-touch-icon*.png',
+            /** `manifest.webmanifest` is not listed: vite-plugin-pwa always appends it as an
+             * additional manifest entry, so globbing it too duplicates the precache entry. */
+            'assets/maskable-icon.png',
+          ],
+          globIgnores: [
+            'images/**/*',
+            '**/*.map',
+            'index.html',
+            'sw-heal.js',
+            'assets/rum.*.js',
+            'assets/locale-*.js',
+            'assets/query-devtools*.js',
+          ],
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          manifestTransforms: [
+            (entries) => ({
+              manifest: entries.filter((entry) => entry.url !== 'manifest.webmanifest'),
+              warnings: [],
+            }),
+          ],
+          /**
+           * vite-plugin-pwa defaults this to `/^assets\//`, which is only true for the
+           * hashed bundle output: the icons live in `assets/` under stable filenames, so the
+           * default marks them immutable (`revision: null`) and an installed PWA would keep
+           * a rebranded icon forever. Match Vite's `[name].[hash].[ext]` shape instead so
+           * hashed chunks stay revision-free while the icons get content revisions.
+           */
+          dontCacheBustURLsMatching: /\.[\w-]{8}\.(?:js|css)$/,
+          /** The server mutates index.html per request for subpath and language support. */
+          navigateFallback: null,
+          /** Reloads window clients that cannot answer a ping after activation —
+           * pages stuck on a previous build's purged precache (stale index.html)
+           * have no working code of their own to recover with. */
+          importScripts: ['sw-heal.js'],
+          runtimeCaching: [
+            {
+              urlPattern: ({ url }) => /\/assets\/locale-[^/]+\.js$/.test(url.pathname),
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'locale-chunks',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 30 * 24 * 60 * 60,
+                },
               },
             },
-          },
-        ],
-      },
-      includeAssets: [],
-      manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
-        display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#009688',
-        icons: [
-          {
-            src: 'assets/favicon-32x32.png',
-            sizes: '32x32',
-            type: 'image/png',
-          },
-          {
-            src: 'assets/favicon-16x16.png',
-            sizes: '16x16',
-            type: 'image/png',
-          },
-          {
-            src: 'assets/apple-touch-icon-180x180.png',
-            sizes: '180x180',
-            type: 'image/png',
-          },
-          {
-            src: 'assets/icon-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: 'assets/maskable-icon.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
-    }),
+          ],
+        },
+        includeAssets: [],
+        manifest: {
+          name: APP_TITLE_PLACEHOLDER,
+          short_name: APP_TITLE_PLACEHOLDER,
+          display: 'standalone',
+          background_color: '#000000',
+          theme_color: '#009688',
+          icons: [
+            {
+              src: 'assets/favicon-32x32.png',
+              sizes: '32x32',
+              type: 'image/png',
+            },
+            {
+              src: 'assets/favicon-16x16.png',
+              sizes: '16x16',
+              type: 'image/png',
+            },
+            {
+              src: 'assets/apple-touch-icon-180x180.png',
+              sizes: '180x180',
+              type: 'image/png',
+            },
+            {
+              src: 'assets/icon-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+            },
+            {
+              src: 'assets/maskable-icon.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
+            },
+          ],
+        },
+      });
+      const pwaApi = (pwaPlugins[0] as Plugin & { api: VitePluginPWAAPI }).api;
+      pwaPlugins.push({
+        name: 'exclude-runtime-manifest-from-precache',
+        enforce: 'post',
+        apply: 'build',
+        buildStart() {
+          pwaApi.extendManifestEntries((entries) =>
+            entries.filter((entry) =>
+              typeof entry === 'string'
+                ? entry !== 'manifest.webmanifest'
+                : entry.url !== 'manifest.webmanifest',
+            ),
+          );
+        },
+      });
+      return pwaPlugins;
+    })(),
     ...(buildSourceMap ? [sourcemapExclude({ excludeNodeModules: true })] : []),
     compression({
       threshold: 10240,

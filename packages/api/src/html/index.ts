@@ -1,4 +1,4 @@
 export * from './bootstrap';
 export * from './devtools';
 export * from './footer';
-export * from './metadata';
+export * from './manifest';

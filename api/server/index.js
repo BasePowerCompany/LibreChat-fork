@@ -44,7 +44,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
-  injectAppMetadata,
+  brandWebManifest,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
@@ -63,6 +63,7 @@ const {
   warnOnUnreachableDeliveryPaths,
   createCodeApiUploadRegistry,
 } = require('@librechat/api');
+const { fillAppBranding, resolveAppBranding } = require('librechat-data-provider');
 const { connectDb, indexSync } = require('~/db');
 const {
   updateAccessPermissions,
@@ -277,8 +278,13 @@ const startServer = async () => {
    * startup checks have applied `rateLimits` from librechat.yaml. */
   const routes = require('./routes');
 
+  const branding = resolveAppBranding(process.env);
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
+  const manifestPath = path.join(appConfig.paths.dist, 'manifest.webmanifest');
+  const manifestJson = fs.existsSync(manifestPath)
+    ? brandWebManifest(fs.readFileSync(manifestPath, 'utf8'), branding)
+    : null;
 
   // In order to provide support to serving the application in a sub-directory
   // We need to update the base href if the DOMAIN_CLIENT is specified and not the root path
@@ -302,10 +308,7 @@ const startServer = async () => {
     customFooter: process.env.CUSTOM_FOOTER,
     interfaceConfig: appConfig?.interfaceConfig,
   });
-  indexHTML = injectAppMetadata(indexHTML, {
-    appTitle: process.env.APP_TITLE,
-    appDescription: process.env.APP_DESCRIPTION,
-  });
+  indexHTML = fillAppBranding(indexHTML, branding);
 
   const cspPolicy = createCspPolicy();
   const shellCache = shellCacheHeaders(cspPolicy != null);
@@ -372,6 +375,15 @@ const startServer = async () => {
   }
 
   app.get('/index.html', sendIndexHtml);
+  if (manifestJson !== null) {
+    app.get('/manifest.webmanifest', (_req, res) => {
+      if (process.env.NODE_ENV?.toLowerCase() === 'production') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      }
+      res.setHeader('Content-Type', 'application/manifest+json');
+      res.send(manifestJson);
+    });
+  }
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));

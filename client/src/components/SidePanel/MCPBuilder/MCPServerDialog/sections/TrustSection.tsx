@@ -1,14 +1,16 @@
 import { useMemo } from 'react';
-import { useFormContext, Controller } from 'react-hook-form';
 import { Checkbox, Label } from '@librechat/client';
+import { DEFAULT_APP_TITLE } from 'librechat-data-provider';
+import { useFormContext, Controller } from 'react-hook-form';
+import type { MCPServerFormData } from '../hooks/useMCPServerForm';
+import { createConfigHtmlSanitizer } from '~/utils/configHtml';
 import { useLocalize, useLocalizedConfig } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import { createConfigHtmlSanitizer } from '~/utils/configHtml';
-import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 export default function TrustSection() {
   const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
+  const appTitle = startupConfig?.appTitle || DEFAULT_APP_TITLE;
   const getLocalizedValue = useLocalizedConfig();
   const sanitize = useMemo(() => createConfigHtmlSanitizer(), []);
   const {
@@ -18,7 +20,10 @@ export default function TrustSection() {
   const trustCheckbox = startupConfig?.interface?.mcpServers?.trustCheckbox;
   const labelHTML = sanitize(getLocalizedValue(trustCheckbox?.label, localize('com_ui_trust_app')));
   const subLabelHTML = sanitize(
-    getLocalizedValue(trustCheckbox?.subLabel, localize('com_agents_mcp_trust_subtext')),
+    getLocalizedValue(
+      trustCheckbox?.subLabel,
+      localize('com_agents_mcp_trust_subtext', { 0: appTitle }),
+    ),
   );
 
   return (
