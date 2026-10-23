@@ -44,6 +44,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
+  injectAppMetadata,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
@@ -300,6 +301,10 @@ const startServer = async () => {
   indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
     customFooter: process.env.CUSTOM_FOOTER,
     interfaceConfig: appConfig?.interfaceConfig,
+  });
+  indexHTML = injectAppMetadata(indexHTML, {
+    appTitle: process.env.APP_TITLE,
+    appDescription: process.env.APP_DESCRIPTION,
   });
 
   const cspPolicy = createCspPolicy();

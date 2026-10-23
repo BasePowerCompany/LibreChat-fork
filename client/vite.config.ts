@@ -151,9 +151,8 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'Base Chat',
-        short_name: 'Base Chat',
-        description: 'Base Chat - powered by Base Infra',
+        name: 'LibreChat',
+        short_name: 'LibreChat',
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#009688',
