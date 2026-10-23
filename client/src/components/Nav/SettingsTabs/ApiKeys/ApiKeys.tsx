@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
+import { DEFAULT_APP_TITLE } from 'librechat-data-provider';
 import {
   Label,
   Button,
@@ -10,6 +11,7 @@ import {
   OGDialogTrigger,
   OGDialogContent,
 } from '@librechat/client';
+import { useGetStartupConfig } from '~/data-provider';
 import CreateKeyDialog from './CreateKeyDialog';
 import { useLocalize } from '~/hooks';
 import Admin from './Admin';
@@ -17,6 +19,8 @@ import List from './List';
 
 export default function ApiKeys() {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
+  const appTitle = startupConfig?.appTitle || DEFAULT_APP_TITLE;
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -36,7 +40,7 @@ export default function ApiKeys() {
           <OGDialogHeader className="space-y-0 pr-8 text-left">
             <div className="flex items-center gap-1.5">
               <OGDialogTitle>{localize('com_ui_agent_api_keys')}</OGDialogTitle>
-              <InfoHoverCard text={localize('com_ui_api_keys_description')} />
+              <InfoHoverCard text={localize('com_ui_api_keys_description', { 0: appTitle })} />
             </div>
           </OGDialogHeader>
           <List onCreate={() => setCreateOpen(true)} />

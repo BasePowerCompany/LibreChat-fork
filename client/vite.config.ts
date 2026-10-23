@@ -2,9 +2,15 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import { constants } from 'zlib';
-import { defineConfig } from 'vite';
+import {
+  APP_TITLE_PLACEHOLDER,
+  fillAppBranding,
+  resolveAppBranding,
+} from 'librechat-data-provider';
+import { defineConfig, loadEnv } from 'vite';
 import { createRequire } from 'module';
 import { VitePWA } from 'vite-plugin-pwa';
+import type { VitePluginPWAAPI } from 'vite-plugin-pwa';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { compression, defineAlgorithm } from 'vite-plugin-compression2';
 import type { Plugin } from 'vite';
@@ -46,8 +52,9 @@ const QUERY_DEVTOOLS_CHUNK_MODULES = [
   'node_modules/copy-anything',
   'node_modules/is-what',
 ];
+let pwaApi: VitePluginPWAAPI | undefined;
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   base: '',
   server: {
     allowedHosts:
@@ -70,6 +77,13 @@ export default defineConfig(({ command }) => ({
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_', 'REACT_APP_THEME_'],
   plugins: [
+    {
+      name: 'app-branding',
+      apply: 'serve',
+      transformIndexHtml(html) {
+        return fillAppBranding(html, resolveAppBranding(loadEnv(mode, '../', '')));
+      },
+    },
     react(),
     {
       name: 'node-polyfills-shims-resolver',
@@ -151,8 +165,8 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: APP_TITLE_PLACEHOLDER,
+        short_name: APP_TITLE_PLACEHOLDER,
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#009688',
@@ -186,6 +200,23 @@ export default defineConfig(({ command }) => ({
         ],
       },
     }),
+    {
+      name: 'exclude-runtime-manifest-from-precache',
+      apply: 'build',
+      configResolved(config) {
+        const pwa = config.plugins.find((plugin) => plugin.name === 'vite-plugin-pwa') as
+          | (Plugin & { api?: VitePluginPWAAPI })
+          | undefined;
+        pwaApi = pwa?.api;
+      },
+      buildStart() {
+        pwaApi?.extendManifestEntries((entries) =>
+          entries.filter(
+            (entry) => (typeof entry === 'string' ? entry : entry.url) !== 'manifest.webmanifest',
+          ),
+        );
+      },
+    },
     ...(buildSourceMap ? [sourcemapExclude({ excludeNodeModules: true })] : []),
     compression({
       threshold: 10240,

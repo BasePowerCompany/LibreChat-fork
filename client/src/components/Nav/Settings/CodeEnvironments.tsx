@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { createCodeWorkerSetupCommand, isCodeWorkerShell } from 'librechat-data-provider';
+import {
+  DEFAULT_APP_TITLE,
+  createCodeWorkerSetupCommand,
+  isCodeWorkerShell,
+} from 'librechat-data-provider';
 import {
   Button,
   Chip,
@@ -28,6 +32,7 @@ import {
   useDeleteCodeEnvironmentMutation,
   usePairCodeEnvironmentMutation,
   useUpdateCodeEnvironmentSettingsMutation,
+  useGetStartupConfig,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -212,6 +217,8 @@ function EnvironmentPermissions({ environment }: { environment: TCodeEnvironment
 
 export default function CodeEnvironments() {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
+  const appTitle = startupConfig?.appTitle || DEFAULT_APP_TITLE;
   const { showToast } = useToastContext();
   const query = useCodeEnvironmentsQuery();
   const pairMutation = usePairCodeEnvironmentMutation();
@@ -254,7 +261,9 @@ export default function CodeEnvironments() {
   };
 
   let pairingControls = (
-    <p className="text-sm text-text-secondary">{localize('com_ui_code_environment_unavailable')}</p>
+    <p className="text-sm text-text-secondary">
+      {localize('com_ui_code_environment_unavailable', { 0: appTitle })}
+    </p>
   );
   if (query.isLoading) {
     pairingControls = (
@@ -333,7 +342,7 @@ export default function CodeEnvironments() {
                       title={localize('com_ui_code_environment_remove_title')}
                       main={
                         <p className="text-sm text-text-secondary">
-                          {localize('com_ui_code_environment_remove_description')}
+                          {localize('com_ui_code_environment_remove_description', { 0: appTitle })}
                         </p>
                       }
                       selection={{
