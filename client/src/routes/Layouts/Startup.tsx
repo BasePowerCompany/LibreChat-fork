@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_APP_TITLE } from 'librechat-data-provider';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { REDIRECT_PARAM, hasStoredRedirect } from '~/utils';
@@ -44,7 +43,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   }, [isAuthenticated, navigate, data]);
 
   useEffect(() => {
-    document.title = startupConfig?.appTitle || DEFAULT_APP_TITLE;
+    document.title = startupConfig?.appTitle || 'LibreChat';
   }, [startupConfig?.appTitle]);
 
   useEffect(() => {

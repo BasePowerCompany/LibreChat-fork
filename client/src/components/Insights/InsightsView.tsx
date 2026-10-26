@@ -11,7 +11,6 @@ import {
   useMediaQuery,
 } from '@librechat/client';
 import {
-  DEFAULT_APP_TITLE,
   INSIGHTS_MAX_RANGE_DAYS,
   INSIGHTS_SEARCH_MAX_LENGTH,
   INSIGHTS_SEARCH_MIN_LENGTH,
@@ -625,9 +624,7 @@ export default function InsightsView() {
   );
   const displayedAgentIds = pendingAgentIds ?? effectiveAgentIds;
 
-  useDocumentTitle(
-    `${localize('com_insights_title')} | ${startupConfig?.appTitle || DEFAULT_APP_TITLE}`,
-  );
+  useDocumentTitle(`${localize('com_insights_title')} | LibreChat`);
 
   useEffect(
     () => () => {

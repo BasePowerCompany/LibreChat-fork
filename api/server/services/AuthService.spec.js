@@ -15,7 +15,6 @@ jest.mock(
     ErrorTypes: {},
     SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
     errorsToString: jest.fn(),
-    resolveAppBranding: jest.requireActual('librechat-data-provider').resolveAppBranding,
   }),
   { virtual: true },
 );

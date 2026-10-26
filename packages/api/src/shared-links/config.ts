@@ -1,4 +1,3 @@
-import { resolveAppBranding } from 'librechat-data-provider';
 import { tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { TSharedLinkStartupConfig } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
@@ -79,7 +78,7 @@ export function buildSharedLinkStartupPayload(
   env: SharedLinkStartupEnv = process.env,
 ): TSharedLinkStartupConfig {
   const payload: TSharedLinkStartupConfig = {
-    appTitle: resolveAppBranding(env).appTitle,
+    appTitle: env.APP_TITLE || 'LibreChat',
   };
 
   if (typeof env.ANALYTICS_GTM_ID === 'string') {

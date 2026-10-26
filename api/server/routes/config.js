@@ -16,11 +16,7 @@ const {
   resolveCodeEnvironmentMoveCapabilities,
   resolveCodeEnvironmentTransitionVersion,
 } = require('@librechat/api');
-const {
-  EModelEndpoint,
-  defaultSocialLogins,
-  resolveAppBranding,
-} = require('librechat-data-provider');
+const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, hasConfigCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
@@ -77,7 +73,7 @@ function buildPreLoginPayload() {
 
   /** @type {Partial<TStartupConfig>} */
   const payload = {
-    appTitle: resolveAppBranding(process.env).appTitle,
+    appTitle: process.env.APP_TITLE || 'LibreChat',
     discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
     facebookLoginEnabled: !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
     githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,

@@ -1,12 +1,10 @@
 import { memo, useState } from 'react';
 import { VerifiedIcon } from '@librechat/client';
-import { DEFAULT_APP_TITLE } from 'librechat-data-provider';
 import { Check, Globe, Info, Settings, Star, User } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import { hasConfigurableSettings } from './items/configurable';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
 import { getIconForItem } from './items/icons';
 import { cn } from '~/utils';
 
@@ -90,8 +88,6 @@ function ToolCardImpl({
   onToggleFavorite,
 }: ToolCardProps) {
   const localize = useLocalize();
-  const { data: startupConfig } = useGetStartupConfig();
-  const appTitle = startupConfig?.appTitle || DEFAULT_APP_TITLE;
   const { name, description } = useDisplayStrings(item);
   const { user } = useAuthContext();
   const isNative = item.kind === 'builtin';
@@ -161,7 +157,7 @@ function ToolCardImpl({
           <p className="line-clamp-3 text-xs leading-snug text-text-secondary">{description}</p>
         ) : (
           <p className="line-clamp-3 text-xs italic leading-snug text-text-tertiary">
-            {isNative ? localize('com_ui_tools_native_short', { 0: appTitle }) : kindLabel}
+            {isNative ? localize('com_ui_tools_native_short') : kindLabel}
           </p>
         )}
         {(item.kind === 'action' && item.endpointCount > 0) || isPublicSkill || isSharedSkill ? (
