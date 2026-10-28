@@ -679,6 +679,7 @@ export abstract class UserConnectionManager {
       );
       await this.disconnectUserConnection(userId, serverName, {
         preservedCreation: creationGuard,
+        reason: 'lifecycle',
       });
       connection = undefined;
     }

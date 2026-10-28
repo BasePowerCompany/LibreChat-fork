@@ -5734,6 +5734,77 @@ describe('MCPManager', () => {
       }
     });
 
+    it('keeps concurrent callers joined to a replacement for a rotated publication generation', async () => {
+      let currentGeneration = 'generation-a';
+      let releaseGeneration: (() => void) | undefined;
+      let generationGate: Promise<void> | undefined;
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockImplementation(async () => {
+          const generation = currentGeneration;
+          await generationGate;
+          return generation;
+        });
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(true);
+      const createConnection = () =>
+        ({
+          isConnected: jest.fn().mockResolvedValue(true),
+          isStale: jest.fn().mockReturnValue(false),
+          refreshToolList: jest.fn().mockResolvedValue(undefined),
+          on: jest.fn(),
+          removeAllListeners: jest.fn(),
+          dispose: jest.fn().mockResolvedValue(undefined),
+        }) as unknown as MCPConnection;
+      const staleConnection = createConnection();
+      const replacementConnection = createConnection();
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockResolvedValueOnce(staleConnection)
+        .mockResolvedValueOnce(replacementConnection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser });
+
+        currentGeneration = 'generation-b';
+        generationGate = new Promise((resolve) => {
+          releaseGeneration = resolve;
+        });
+        const generationCalls = generationSpy.mock.calls.length;
+        const leader = manager.getUserConnection({ serverName, user: mockUser });
+        while (generationSpy.mock.calls.length === generationCalls) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        const joined = [
+          manager.getUserConnection({ serverName, user: mockUser }),
+          manager.getUserConnection({ serverName, user: mockUser }),
+        ];
+        await new Promise((resolve) => setImmediate(resolve));
+        generationGate = undefined;
+        releaseGeneration?.();
+
+        await expect(leader).resolves.toBe(replacementConnection);
+        await expect(Promise.all(joined)).resolves.toEqual([
+          replacementConnection,
+          replacementConnection,
+        ]);
+        expect(staleConnection.dispose).toHaveBeenCalledTimes(1);
+        expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+        expect(manager.getUserConnections(userId)?.get(serverName)).toBe(replacementConnection);
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
     it('rejects a live snapshot after another replica rotates its publication generation', async () => {
       const generationSpy = jest
         .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
