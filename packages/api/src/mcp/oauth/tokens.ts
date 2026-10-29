@@ -1745,7 +1745,8 @@ export class MCPTokenStorage {
       logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
       return storedTokens;
     } catch (refreshError) {
-      logger.error(`${logPrefix} Failed to refresh tokens`, refreshError);
+      const level = refreshError instanceof ReauthenticationRequiredError ? 'warn' : 'error';
+      logger[level](`${logPrefix} Failed to refresh tokens`, refreshError);
       if (
         refreshError instanceof ReauthenticationRequiredError ||
         refreshError instanceof MCPTokenRefreshUnavailableError

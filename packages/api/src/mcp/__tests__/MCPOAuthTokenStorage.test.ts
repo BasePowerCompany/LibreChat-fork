@@ -6,6 +6,7 @@
  */
 
 import { Keyv } from 'keyv';
+import { logger } from '@librechat/data-schemas';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import {
@@ -1605,6 +1606,39 @@ describe('MCPTokenStorage', () => {
         expiresIn: 86400,
         metadata: storedBindingMetadata,
       });
+    });
+
+    it.each([
+      { failure: new ReauthenticationRequiredError('srv1', 'binding'), level: 'warn' },
+      { failure: new Error('Token refresh failed: 400 invalid_grant'), level: 'error' },
+    ] as const)('logs refresh failure at $level: $failure.message', async ({ failure, level }) => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+      const refresh = MCPTokenStorage.forceRefreshTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        refreshTokens: jest.fn().mockRejectedValue(failure),
+      });
+      if (failure instanceof ReauthenticationRequiredError) {
+        await expect(refresh).rejects.toBe(failure);
+      } else {
+        await expect(refresh).resolves.toBeNull();
+      }
+      expect(logger[level]).toHaveBeenCalledWith(
+        expect.stringContaining(' Failed to refresh tokens'),
+        failure,
+      );
+      expect(logger[level === 'warn' ? 'error' : 'warn']).not.toHaveBeenCalledWith(
+        expect.stringContaining(' Failed to refresh tokens'),
+        expect.anything(),
+      );
     });
 
     it('fails closed before invoking refresh for legacy client metadata', async () => {
