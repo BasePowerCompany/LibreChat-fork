@@ -997,6 +997,7 @@ interface MCPConnectionParams {
   useSSRFProtection?: boolean;
   allowedAddresses?: string[] | null;
   ephemeralConnection?: boolean;
+  unauthenticatedToolListing?: boolean;
   /** The owner will replace this connection after a tools/list authentication rejection. */
   directBearerRecoveryEnabled?: boolean;
 }
@@ -1044,6 +1045,7 @@ export class MCPConnection extends EventEmitter {
   private readonly useSSRFProtection: boolean;
   private readonly allowedAddresses?: string[] | null;
   private readonly ephemeralConnection: boolean;
+  private readonly unauthenticatedToolListing: boolean;
   private readonly directBearerRecoveryEnabled: boolean;
   private readonly proxyConfig?: MCPProxyConfig;
   private toolListChangeGeneration = 0;
@@ -1203,6 +1205,7 @@ export class MCPConnection extends EventEmitter {
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
     this.ephemeralConnection = params.ephemeralConnection === true;
+    this.unauthenticatedToolListing = params.unauthenticatedToolListing === true;
     this.directBearerRecoveryEnabled = params.directBearerRecoveryEnabled === true;
     this.proxyConfig = getMCPProxyConfig(params.serverConfig);
     this.iconPath = params.serverConfig.iconPath;
@@ -2144,7 +2147,8 @@ export class MCPConnection extends EventEmitter {
           } catch {
             // OAuth failed or timed out
             this.oauthRequired = false;
-            logger.error(`${this.getLogPrefix()} OAuth handling failed`);
+            const level = this.unauthenticatedToolListing && !this.oauthTokens ? 'debug' : 'error';
+            logger[level](`${this.getLogPrefix()} OAuth handling failed`);
             // Re-throw the original authentication error
             throw error;
           }
@@ -2241,7 +2245,11 @@ export class MCPConnection extends EventEmitter {
         throw new Error('Connection not established');
       }
     } catch (error) {
-      logger.error(`${this.getLogPrefix()} Connection failed`);
+      const level =
+        this.unauthenticatedToolListing && !this.oauthTokens && isOAuthAuthenticationError(error)
+          ? 'debug'
+          : 'error';
+      logger[level](`${this.getLogPrefix()} Connection failed`);
       throw error;
     }
   }
